@@ -99,6 +99,13 @@ h3{margin:0 0 12px;font-size:15px}
   .stats{grid-template-columns:repeat(4,1fr)}
   .app{padding-bottom:40px}
 }
+.seg{display:flex;background:#ececE8;border-radius:10px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;border:0;background:none;padding:10px;border-radius:8px;font-weight:650;color:var(--muted)}
+.seg button.on{background:#fff;color:var(--text);box-shadow:0 1px 3px #0002}
+.chip.warn{background:#fff6e5;color:var(--amber)}
+.sub{font-size:12px;color:var(--muted);margin-top:2px}
+.cartrow{flex-wrap:wrap}.cartrow .ctl{display:flex;align-items:center;gap:8px;margin-left:auto}
+.big{font-size:22px;font-weight:800}
 /* modals: bottom sheet on phone */
 .modal-backdrop{display:none;position:fixed;inset:0;background:#0007;z-index:40;align-items:center;justify-content:center;padding:15px}
 .modal-backdrop.show{display:flex}
@@ -143,6 +150,7 @@ h3{margin:0 0 12px;font-size:15px}
     <div><h1>Overview</h1></div>
     <button class="btn green" onclick="goTo('billing')">+ New Bill</button>
   </div>
+  <div id="rateNudge"></div>
   <div class="stats">
     <div class="stat"><div class="stat-label">Products</div><div class="stat-value" id="statProducts">0</div></div>
     <div class="stat"><div class="stat-label">Stock Units</div><div class="stat-value" id="statUnits">0</div></div>
@@ -199,13 +207,18 @@ h3{margin:0 0 12px;font-size:15px}
 <!-- STOCK -->
 <section class="page" id="inventory">
   <div class="page-heading">
-    <div><h1>Stock</h1></div>
-    <button class="btn" onclick="openProductModal()">+ Add</button>
+    <h1>Stock</h1>
+    <button class="btn" id="addBtn" onclick="addNew()">+ Add</button>
   </div>
-  <div class="toolbar">
-    <input id="inventorySearch" placeholder="Search name or barcode…" oninput="renderInventory()">
+  <div class="seg"><button class="on" id="segP" onclick="stockView('p')">Products</button><button id="segS" onclick="stockView('s')">Suppliers</button></div>
+  <div id="viewP">
+    <div class="toolbar">
+      <input id="inventorySearch" placeholder="Search name, barcode, bill no, supplier" oninput="renderInventory()">
+      <button class="btn secondary" onclick="openRates()">₹ Rates</button>
+    </div>
+    <div id="inventoryList" class="list"></div>
   </div>
-  <div id="inventoryList" class="list"></div>
+  <div id="viewS" style="display:none"><div id="supplierList" class="list"></div></div>
   <div class="toolbar" style="margin-top:18px">
     <button class="btn secondary" style="flex:1" onclick="exportBackup()">⬇ Export Backup</button>
     <button class="btn secondary" style="flex:1" onclick="document.getElementById('importFile').click()">⬆ Import</button>
@@ -228,21 +241,87 @@ h3{margin:0 0 12px;font-size:15px}
   <form id="productForm">
     <input type="hidden" id="productId">
     <div class="form-grid">
-      <div class="field full"><label>Product Name *</label><input id="pName" required placeholder="e.g. Shampoo"></div>
+      <div class="field full"><label>Product Name *</label><input id="pName" required placeholder="e.g. Tomato"></div>
+      <div class="field"><label>Sold by</label><select id="pUnit" onchange="applyUnit()"><option value="pcs">Per piece</option><option value="kg">By weight (kg)</option></select></div>
+      <div class="field"><label>Category</label><input id="pCategory" placeholder="General"></div>
       <div class="field full"><label>Barcode</label>
         <div class="barcode-row"><input id="pBarcode" placeholder="Enter or scan"><button type="button" class="btn secondary" onclick="startScanner('product')">📷</button></div>
       </div>
-      <div class="field"><label>Purchase Price (₹)</label><input id="pPurchase" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
-      <div class="field"><label>Selling Price (₹) *</label><input id="pPrice" type="number" inputmode="decimal" min="0" step="0.01" required></div>
+      <div class="field"><label id="lPurchase">Purchase Price (₹)</label><input id="pPurchase" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
+      <div class="field"><label id="lPrice">Selling Price (₹) *</label><input id="pPrice" type="number" inputmode="decimal" min="0" step="0.01" required></div>
       <div class="field"><label>Tax (%)</label><input id="pTax" type="number" inputmode="decimal" min="0" max="100" step="0.01" value="0"></div>
-      <div class="field"><label>Quantity *</label><input id="pQty" type="number" inputmode="numeric" min="0" step="1" required value="0"></div>
-      <div class="field full"><label>Category</label><input id="pCategory" placeholder="General"></div>
+      <div class="field"><label id="lQty">Quantity *</label><input id="pQty" type="number" inputmode="decimal" min="0" step="1" required value="0"></div>
+      <div class="field"><label>Supplier</label><select id="pSupplier" onchange="supChange(this)"></select></div>
+      <div class="field"><label>Supplier Bill No</label><input id="pBill" placeholder="Purchase bill number"></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn secondary" onclick="closeProductModal()">Cancel</button>
       <button type="submit" class="btn green">Save</button>
     </div>
   </form>
+</div></div>
+
+<!-- RESTOCK MODAL -->
+<div class="modal-backdrop" id="restockModal">
+<div class="modal">
+  <h2>Add Stock</h2><div class="sub" id="rName" style="margin:-10px 0 14px"></div>
+  <form id="restockForm">
+    <input type="hidden" id="rId">
+    <div class="form-grid">
+      <div class="field"><label id="lRQty">Quantity received</label><input id="rQty" type="number" inputmode="decimal" min="0" step="any" required></div>
+      <div class="field"><label>Purchase Price (₹)</label><input id="rCost" type="number" inputmode="decimal" min="0" step="0.01"></div>
+      <div class="field"><label>Supplier Bill No</label><input id="rBill" placeholder="Bill number"></div>
+      <div class="field"><label>Supplier</label><select id="rSupplier" onchange="supChange(this)"></select></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn secondary" onclick="$('restockModal').classList.remove('show')">Cancel</button>
+      <button type="submit" class="btn green">Add Stock</button>
+    </div>
+  </form>
+</div></div>
+
+<!-- SUPPLIER MODAL -->
+<div class="modal-backdrop" id="supplierModal" style="z-index:55">
+<div class="modal">
+  <h2 id="supplierTitle">Add Supplier</h2>
+  <form id="supplierForm">
+    <input type="hidden" id="sId">
+    <div class="form-grid">
+      <div class="field full"><label>Supplier Name *</label><input id="sName" required></div>
+      <div class="field full"><label>Phone (optional)</label><input id="sPhone" inputmode="tel"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn secondary" onclick="closeSupplierModal()">Cancel</button>
+      <button type="submit" class="btn green">Save</button>
+    </div>
+  </form>
+</div></div>
+
+<!-- WEIGH MODAL -->
+<div class="modal-backdrop" id="weighModal" style="z-index:45">
+<div class="modal">
+  <h2 id="wName">Weight</h2>
+  <div class="sub" id="wStock" style="margin:-10px 0 14px"></div>
+  <div class="barcode-row">
+    <input id="wQty" type="number" inputmode="decimal" min="0" step="any" placeholder="Weight" oninput="calcWeigh()" onkeydown="if(event.key==='Enter')confirmWeigh()">
+    <select id="wUnit" style="width:90px" onchange="calcWeigh()"><option value="kg">kg</option><option value="g">g</option></select>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:16px"><span class="muted">Amount</span><span class="big" id="wTotal">₹0.00</span></div>
+  <div class="modal-actions">
+    <button class="btn secondary" onclick="closeWeigh()">Cancel</button>
+    <button class="btn green" onclick="confirmWeigh()">Add to bill</button>
+  </div>
+</div></div>
+
+<!-- RATES MODAL -->
+<div class="modal-backdrop" id="ratesModal" style="z-index:45">
+<div class="modal">
+  <h2>Today's Rates (per kg)</h2>
+  <div id="ratesList" class="list"></div>
+  <div class="modal-actions">
+    <button class="btn secondary" onclick="$('ratesModal').classList.remove('show')">Cancel</button>
+    <button class="btn green" onclick="saveRates()">Save rates</button>
+  </div>
 </div></div>
 
 <!-- SCANNER MODAL -->
@@ -257,13 +336,14 @@ h3{margin:0 0 12px;font-size:15px}
 <div class="toast" id="toast"></div>
 
 <script>
-const PRODUCT_KEY="inventory_products",SALES_KEY="sales_bills",BILLS_KEY="open_bills";
-let products=load(PRODUCT_KEY,[]),sales=load(SALES_KEY,[]),bills=load(BILLS_KEY,[]);
+const PRODUCT_KEY="inventory_products",SALES_KEY="sales_bills",BILLS_KEY="open_bills",SUPPLIERS_KEY="suppliers";
+let products=load(PRODUCT_KEY,[]),sales=load(SALES_KEY,[]),bills=load(BILLS_KEY,[]),suppliers=load(SUPPLIERS_KEY,[]);
 let activeId=null,billCounter=0,scanner=null,scannerTarget=null,scannerBusy=false;
 
 function load(k,f){try{const d=JSON.parse(localStorage.getItem(k));return Array.isArray(d)?d:f}catch{return f}}
 const saveProducts=()=>localStorage.setItem(PRODUCT_KEY,JSON.stringify(products));
 const saveSales=()=>localStorage.setItem(SALES_KEY,JSON.stringify(sales));
+const saveSuppliers=()=>localStorage.setItem(SUPPLIERS_KEY,JSON.stringify(suppliers));
 const saveBills=()=>localStorage.setItem(BILLS_KEY,JSON.stringify(bills));
 const $=id=>document.getElementById(id);
 const money=n=>"₹"+Number(n||0).toFixed(2);
@@ -304,7 +384,7 @@ function saveCustomer(){const c=cur();c.name=$("customerName").value;c.phone=$("
 function savePayment(){cur().payment=$("paymentMethod").value;saveBills()}
 function billTotals(b){
   let sub=0,tax=0,count=0;
-  b.items.forEach(i=>{const l=i.price*i.qty;sub+=l;tax+=l*i.tax/100;count+=i.qty});
+  b.items.forEach(i=>{const l=i.price*i.qty;sub+=l;tax+=l*i.tax/100;count+=i.unit==="kg"?1:i.qty});
   return{subtotal:sub,tax,total:sub+tax,count};
 }
 function renderTabs(){
@@ -317,14 +397,21 @@ function renderTabs(){
   $("heldDot").textContent=held;$("heldDot").classList.toggle("show",held>0);
 }
 
+/* ===== HELPERS ===== */
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const fmtQty=(q,u)=>u==="kg"?(+Number(q).toFixed(3))+" kg":q;
+const supName=id=>(suppliers.find(x=>x.id===id)||{}).name||"";
+const unitTag=p=>p.unit==="kg"?"/kg":"";
+
 /* ===== ADD ITEMS ===== */
 function addProduct(p){
-  if(p.qty<=0){toast("Out of stock.");return}
+  if(p.qty<=0){toast("Out of stock");return}
+  $("billBarcode").value="";$("suggest").classList.remove("show");
+  if(p.unit==="kg")return openWeigh(p.id);
   const c=cur(),ex=c.items.find(x=>x.productId===p.id);
-  if((ex?ex.qty:0)>=p.qty){toast("Not enough stock available.");return}
-  if(ex)ex.qty++;else c.items.push({productId:p.id,name:p.name,barcode:p.barcode,price:Number(p.price),tax:Number(p.tax)||0,qty:1});
-  saveBills();$("billBarcode").value="";$("suggest").classList.remove("show");
-  renderBilling();toast(p.name+" added.");
+  if((ex?ex.qty:0)>=p.qty){toast("Not enough stock");return}
+  if(ex)ex.qty++;else c.items.push({productId:p.id,name:p.name,barcode:p.barcode,unit:"pcs",price:Number(p.price),tax:Number(p.tax)||0,qty:1});
+  saveBills();renderBilling();toast(p.name+" added");
 }
 function addByBarcode(){
   const v=$("billBarcode").value.trim();
@@ -340,27 +427,54 @@ function showSuggest(){
   const v=$("billBarcode").value.trim(),s=$("suggest");
   if(!v){s.classList.remove("show");return}
   const m=matches(v);
-  s.innerHTML=m.length?m.map(p=>`<button onclick="addProduct(products.find(x=>x.id==='${p.id}'))"><span>${esc(p.name)}<br><small class="muted">${p.qty} in stock</small></span><strong>${money(p.price)}</strong></button>`).join(""):`<div class="empty" style="padding:14px">No match</div>`;
+  s.innerHTML=m.length?m.map(p=>`<button onclick="addProduct(products.find(x=>x.id==='${p.id}'))"><span>${esc(p.name)}<br><small class="muted">${fmtQty(p.qty,p.unit)} in stock</small></span><strong>${money(p.price)}${unitTag(p)}</strong></button>`).join(""):`<div class="empty" style="padding:14px">No match</div>`;
   s.classList.add("show");
 }
 function changeQty(id,d){
   const c=cur(),i=c.items.find(x=>x.productId===id),p=products.find(x=>x.id===id);if(!i)return;
   const n=i.qty+d;
   if(n<=0)c.items=c.items.filter(x=>x.productId!==id);
-  else{if(!p||n>p.qty){toast("Not enough stock available.");return}i.qty=n}
+  else{if(!p||n>p.qty){toast("Not enough stock");return}i.qty=n}
   saveBills();renderBilling();
 }
+function removeItem(id){const c=cur();c.items=c.items.filter(x=>x.productId!==id);saveBills();renderBilling()}
+
+/* weighed items */
+let weighId=null;
+function openWeigh(id){
+  const p=products.find(x=>x.id===id);if(!p)return;weighId=id;
+  const ex=cur().items.find(x=>x.productId===id);
+  $("wName").textContent=p.name+" · "+money(p.price)+"/kg";
+  $("wStock").textContent="Available: "+fmtQty(p.qty,"kg")+(p.rateDate!==today()?" · Rate not updated today":"");
+  $("wUnit").value="kg";$("wQty").value=ex?ex.qty:"";
+  calcWeigh();$("weighModal").classList.add("show");setTimeout(()=>$("wQty").focus(),60);
+}
+const closeWeigh=()=>$("weighModal").classList.remove("show");
+const weighKg=()=>{const v=Number($("wQty").value)||0;return $("wUnit").value==="g"?v/1000:v};
+function calcWeigh(){const p=products.find(x=>x.id===weighId);$("wTotal").textContent=money((p?p.price:0)*weighKg())}
+function confirmWeigh(){
+  const p=products.find(x=>x.id===weighId),kg=Math.round(weighKg()*1000)/1000;
+  if(!(kg>0)){toast("Enter weight");return}
+  if(kg>p.qty){toast("Only "+fmtQty(p.qty,"kg")+" in stock");return}
+  const c=cur(),ex=c.items.find(x=>x.productId===p.id);
+  if(ex){ex.qty=kg;ex.price=Number(p.price)}
+  else c.items.push({productId:p.id,name:p.name,barcode:p.barcode,unit:"kg",price:Number(p.price),tax:Number(p.tax)||0,qty:kg});
+  saveBills();closeWeigh();renderBilling();
+}
+
 function renderBilling(){
   const c=cur();
   $("customerName").value=c.name;$("customerPhone").value=c.phone;$("paymentMethod").value=c.payment;
   $("cartEmpty").style.display=c.items.length?"none":"block";
-  $("cartList").innerHTML=c.items.map(i=>`
-    <div class="card item" style="padding:12px">
-      <div><div class="name">${esc(i.name)}</div><small>${money(i.price)}${i.tax?` + ${i.tax}% tax`:""}</small></div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="qty"><button onclick="changeQty('${i.productId}',-1)">−</button><strong>${i.qty}</strong><button onclick="changeQty('${i.productId}',1)">+</button></div>
+  $("cartList").innerHTML=c.items.map(i=>{
+    const kg=i.unit==="kg";
+    return `<div class="card item cartrow" style="padding:12px">
+      <div><div class="name">${esc(i.name)}</div><small>${money(i.price)}${kg?"/kg":""}${i.tax?` + ${i.tax}% tax`:""}</small></div>
+      <div class="ctl">
+        ${kg?`<button class="btn secondary small" onclick="openWeigh('${i.productId}')">⚖ ${fmtQty(i.qty,"kg")}</button><button class="btn danger small" onclick="removeItem('${i.productId}')">✕</button>`
+        :`<div class="qty"><button onclick="changeQty('${i.productId}',-1)">−</button><strong>${i.qty}</strong><button onclick="changeQty('${i.productId}',1)">+</button></div>`}
         <strong style="min-width:68px;text-align:right">${money(i.price*i.qty)}</strong>
-      </div></div>`).join("");
+      </div></div>`}).join("");
   const t=billTotals(c);
   $("billItemCount").textContent=t.count;$("billSubtotal").textContent=money(t.subtotal);
   $("billTax").textContent=money(t.tax);$("billTotal").textContent=money(t.total);
@@ -376,77 +490,178 @@ function nextInvoice(){
 }
 function completeSale(){
   const c=cur();
-  if(!c.items.length){toast("Add products first.");return}
+  if(!c.items.length){toast("Add products first");return}
   for(const i of c.items){
     const p=products.find(x=>x.id===i.productId);
-    if(!p){toast(i.name+" no longer exists.");return}
+    if(!p){toast(i.name+" no longer exists");return}
     if(p.qty<i.qty){toast("Not enough stock: "+i.name);return}
   }
   const t=billTotals(c);
   const bill={id:makeId(),invoice:nextInvoice(),date:new Date().toISOString(),
     customerName:c.name.trim()||"Walk-in Customer",customerPhone:c.phone.trim(),payment:c.payment,
-    items:c.items.map(i=>({productId:i.productId,name:i.name,barcode:i.barcode,price:i.price,tax:i.tax,qty:i.qty,lineTotal:i.price*i.qty,taxAmount:i.price*i.qty*i.tax/100})),
+    items:c.items.map(i=>({productId:i.productId,name:i.name,barcode:i.barcode,unit:i.unit||"pcs",price:i.price,tax:i.tax,qty:i.qty,lineTotal:i.price*i.qty,taxAmount:i.price*i.qty*i.tax/100})),
     subtotal:t.subtotal,tax:t.tax,total:t.total};
-  c.items.forEach(i=>{products.find(x=>x.id===i.productId).qty-=i.qty});
+  c.items.forEach(i=>{const p=products.find(x=>x.id===i.productId);p.qty=Math.round((p.qty-i.qty)*1000)/1000});
   sales.unshift(bill);
   bills=bills.filter(b=>b.id!==c.id);
-  if(!bills.length)newBill();else activeId=bills[0].id; // jump to a waiting bill
+  if(!bills.length)newBill();else activeId=bills[0].id;
   saveProducts();saveSales();saveBills();
   renderAll();toast("Sale completed · "+bill.invoice);
   showInvoice(bill.id);
 }
 
+/* ===== SUPPLIERS ===== */
+function fillSupplierSelect(el,val){
+  el.innerHTML='<option value="">No supplier</option>'+suppliers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("")+'<option value="__new">+ New supplier…</option>';
+  el.value=val||"";el.dataset.prev=el.value;
+}
+function supChange(el){
+  if(el.value!=="__new"){el.dataset.prev=el.value;return}
+  const prev=el.dataset.prev||"";
+  openSupplierModal(null,id=>fillSupplierSelect(el,id||prev));
+}
+let supCb=null;
+function openSupplierModal(id=null,cb=null){
+  supCb=cb;$("supplierForm").reset();$("sId").value="";
+  $("supplierTitle").textContent=id?"Edit Supplier":"Add Supplier";
+  const x=suppliers.find(v=>v.id===id);
+  if(x){$("sId").value=x.id;$("sName").value=x.name;$("sPhone").value=x.phone||""}
+  $("supplierModal").classList.add("show");
+}
+function closeSupplierModal(){$("supplierModal").classList.remove("show");if(supCb){supCb(null);supCb=null}}
+$("supplierForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const id=$("sId").value||makeId(),name=$("sName").value.trim(),phone=$("sPhone").value.trim();
+  const i=suppliers.findIndex(x=>x.id===id);
+  if(i>=0)suppliers[i]={id,name,phone};else suppliers.push({id,name,phone});
+  saveSuppliers();$("supplierModal").classList.remove("show");
+  if(supCb){supCb(id);supCb=null}
+  renderSuppliers();renderInventory();toast("Supplier saved");
+});
+function deleteSupplier(id){
+  const x=suppliers.find(v=>v.id===id);if(!x||!confirm(`Delete "${x.name}"? Products keep their data.`))return;
+  suppliers=suppliers.filter(v=>v.id!==id);
+  products.forEach(p=>{if(p.supplierId===id)p.supplierId=""});
+  saveSuppliers();saveProducts();renderAll();
+}
+function renderSuppliers(){
+  $("supplierList").innerHTML=suppliers.length?suppliers.map(x=>{
+    const n=products.filter(p=>p.supplierId===x.id).length;
+    return `<div class="card"><div class="item"><div><div class="name">${esc(x.name)}</div>
+      <small>${x.phone?`<a href="tel:${esc(x.phone)}" style="color:inherit">${esc(x.phone)}</a>`:"No phone"}</small></div>
+      <span class="chip">${n} products</span></div>
+      <div class="card-actions"><button class="btn secondary small" onclick="openSupplierModal('${x.id}')">Edit</button>
+      <button class="btn danger small" onclick="deleteSupplier('${x.id}')">Delete</button></div></div>`}).join(""):`<div class="empty">No suppliers</div>`;
+}
+let view="p";
+function stockView(v){
+  view=v;$("viewP").style.display=v==="p"?"block":"none";$("viewS").style.display=v==="s"?"block":"none";
+  $("segP").classList.toggle("on",v==="p");$("segS").classList.toggle("on",v==="s");
+  $("addBtn").textContent=v==="p"?"+ Add":"+ Supplier";
+}
+const addNew=()=>view==="s"?openSupplierModal():openProductModal();
+
 /* ===== INVENTORY ===== */
+function applyUnit(){
+  const kg=$("pUnit").value==="kg";
+  $("lPurchase").textContent=kg?"Purchase Price per kg (₹)":"Purchase Price (₹)";
+  $("lPrice").textContent=kg?"Selling Price per kg (₹) *":"Selling Price (₹) *";
+  $("lQty").textContent=kg?"Stock (kg) *":"Quantity *";
+  $("pQty").step=kg?"any":"1";
+}
 function openProductModal(id=null){
   $("productForm").reset();$("productId").value="";
-  $("pPurchase").value=0;$("pTax").value=0;$("pQty").value=0;
+  $("pPurchase").value=0;$("pTax").value=0;$("pQty").value=0;$("pUnit").value="pcs";
   $("productModalTitle").textContent=id?"Edit Product":"Add Product";
-  if(id){
-    const p=products.find(x=>x.id===id);if(!p)return;
+  const p=id?products.find(x=>x.id===id):null;
+  if(p){
     $("productId").value=p.id;$("pName").value=p.name;$("pBarcode").value=p.barcode||"";
     $("pPurchase").value=p.purchase||0;$("pPrice").value=p.price;$("pTax").value=p.tax||0;
     $("pQty").value=p.qty;$("pCategory").value=p.category||"";
+    $("pUnit").value=p.unit||"pcs";$("pBill").value=p.purchaseBill||"";
   }
-  $("productModal").classList.add("show");
+  fillSupplierSelect($("pSupplier"),p?p.supplierId:"");
+  applyUnit();$("productModal").classList.add("show");
 }
 const closeProductModal=()=>$("productModal").classList.remove("show");
 $("productForm").addEventListener("submit",e=>{
   e.preventDefault();
   const id=$("productId").value,barcode=$("pBarcode").value.trim();
-  if(products.find(p=>p.barcode&&p.barcode===barcode&&p.id!==id)){toast("This barcode already belongs to another product.");return}
-  const p={id:id||makeId(),name:$("pName").value.trim(),barcode,
+  if(products.find(p=>p.barcode&&p.barcode===barcode&&p.id!==id)){toast("Barcode already used by another product");return}
+  const old=products.find(x=>x.id===id);
+  const p={id:id||makeId(),name:$("pName").value.trim(),barcode,unit:$("pUnit").value,
     purchase:Number($("pPurchase").value)||0,price:Number($("pPrice").value),
-    tax:Number($("pTax").value)||0,qty:Number($("pQty").value),category:$("pCategory").value.trim()};
-  if(p.price<0||p.purchase<0||p.qty<0||p.tax<0||p.tax>100){toast("Please enter valid values.");return}
+    tax:Number($("pTax").value)||0,qty:Number($("pQty").value),category:$("pCategory").value.trim(),
+    supplierId:$("pSupplier").value==="__new"?"":$("pSupplier").value,purchaseBill:$("pBill").value.trim(),
+    purchases:old?(old.purchases||[]):[],rateDate:old&&old.price===Number($("pPrice").value)?old.rateDate:today()};
+  if(!(p.price>=0)||p.purchase<0||!(p.qty>=0)||p.tax<0||p.tax>100){toast("Enter valid values");return}
+  if(!old&&p.qty>0)p.purchases.push({date:new Date().toISOString(),qty:p.qty,bill:p.purchaseBill,supplierId:p.supplierId,cost:p.purchase});
+  if(old)bills.forEach(b=>b.items.forEach(i=>{if(i.productId===p.id)i.price=p.price}));
   const i=products.findIndex(x=>x.id===id);
   if(i>=0)products[i]=p;else products.push(p);
-  saveProducts();closeProductModal();renderAll();toast("Product saved.");
+  saveProducts();saveBills();closeProductModal();renderAll();toast("Product saved");
 });
 function renderInventory(){
   const q=$("inventorySearch").value.toLowerCase();
-  const f=products.filter(p=>p.name.toLowerCase().includes(q)||(p.barcode||"").toLowerCase().includes(q));
-  $("inventoryList").innerHTML=f.length?f.map(p=>`
-    <div class="card">
+  const f=products.filter(p=>[p.name,p.barcode,p.purchaseBill,supName(p.supplierId)].some(v=>(v||"").toLowerCase().includes(q)));
+  $("inventoryList").innerHTML=f.length?f.map(p=>{
+    const kg=p.unit==="kg",sup=supName(p.supplierId);
+    return `<div class="card">
       <div class="item">
-        <div><div class="name">${esc(p.name)}</div><small>${esc(p.category||"General")} · ${esc(p.barcode||"no barcode")}</small></div>
-        <div class="right"><strong>${money(p.price)}</strong><br><span class="chip ${p.qty<=5?"low":""}">${p.qty} in stock</span></div>
+        <div><div class="name">${esc(p.name)}</div><small>${esc(p.category||"General")}${kg?"":" · "+esc(p.barcode||"no barcode")}</small>
+        ${sup||p.purchaseBill?`<small>${esc(sup)}${sup&&p.purchaseBill?" · ":""}${p.purchaseBill?"Bill "+esc(p.purchaseBill):""}</small>`:""}</div>
+        <div class="right"><strong>${money(p.price)}${unitTag(p)}</strong><br><span class="chip ${p.qty<=5?"low":""}">${fmtQty(p.qty,p.unit)} in stock</span></div>
       </div>
+      ${kg&&p.rateDate!==today()?`<div style="margin-top:8px"><span class="chip warn">Rate not updated today</span></div>`:""}
       <div class="card-actions">
-        <button class="btn secondary small" onclick="addStock('${p.id}')">+ Stock</button>
+        <button class="btn secondary small" onclick="openRestock('${p.id}')">+ Stock</button>
         <button class="btn secondary small" onclick="openProductModal('${p.id}')">Edit</button>
         <button class="btn danger small" onclick="deleteProduct('${p.id}')">Delete</button>
-      </div></div>`).join(""):`<div class="empty">No products</div>`;
+      </div></div>`}).join(""):`<div class="empty">No products</div>`;
 }
-function addStock(id){
+function openRestock(id){
   const p=products.find(x=>x.id===id);if(!p)return;
-  const v=prompt("How many units to add to "+p.name+"?");if(v===null)return;
-  const n=Number(v);
-  if(!Number.isInteger(n)||n<=0){toast("Enter a whole number.");return}
-  p.qty+=n;saveProducts();renderAll();toast("Stock updated.");
+  $("rId").value=id;$("rName").textContent=p.name;$("rQty").value="";$("rCost").value=p.purchase||"";$("rBill").value="";
+  $("lRQty").textContent="Quantity received ("+(p.unit==="kg"?"kg":"pcs")+")";
+  $("rQty").step=p.unit==="kg"?"any":"1";
+  fillSupplierSelect($("rSupplier"),p.supplierId);$("restockModal").classList.add("show");
 }
+$("restockForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const p=products.find(x=>x.id===$("rId").value),q=Number($("rQty").value);
+  if(!p||!(q>0)||(p.unit!=="kg"&&!Number.isInteger(q))){toast("Enter a valid quantity");return}
+  const cost=$("rCost").value===""?p.purchase:Number($("rCost").value),bill=$("rBill").value.trim();
+  const sid=$("rSupplier").value==="__new"?"":$("rSupplier").value;
+  p.qty=Math.round((p.qty+q)*1000)/1000;p.purchase=cost;p.supplierId=sid;
+  if(bill)p.purchaseBill=bill;
+  (p.purchases=p.purchases||[]).push({date:new Date().toISOString(),qty:q,bill,supplierId:sid,cost});
+  saveProducts();$("restockModal").classList.remove("show");renderAll();toast("Stock updated");
+});
 function deleteProduct(id){
   const p=products.find(x=>x.id===id);if(!p||!confirm(`Delete "${p.name}"?`))return;
-  products=products.filter(x=>x.id!==id);saveProducts();renderAll();toast("Product deleted.");
+  products=products.filter(x=>x.id!==id);saveProducts();renderAll();toast("Product deleted");
+}
+
+/* ===== DAILY RATES ===== */
+function openRates(){
+  const k=products.filter(p=>p.unit==="kg");
+  if(!k.length){toast("No weighed products yet");return}
+  $("ratesList").innerHTML=k.map(p=>`<div class="item"><div><div class="name">${esc(p.name)}</div><small>${p.rateDate===today()?"Updated today":"Not updated today"}</small></div>
+    <input class="rate" data-id="${p.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${p.price}" style="width:110px"></div>`).join("");
+  $("ratesModal").classList.add("show");
+}
+function saveRates(){
+  let bad=false;
+  document.querySelectorAll("#ratesList .rate").forEach(el=>{
+    const v=Number(el.value);if(!(v>=0)||el.value===""){bad=true}
+  });
+  if(bad){toast("Enter valid rates");return}
+  document.querySelectorAll("#ratesList .rate").forEach(el=>{
+    const p=products.find(x=>x.id===el.dataset.id),v=Number(el.value);if(!p)return;
+    p.price=v;p.rateDate=today();
+    bills.forEach(b=>b.items.forEach(i=>{if(i.productId===p.id)i.price=v}));
+  });
+  saveProducts();saveBills();$("ratesModal").classList.remove("show");renderAll();toast("Rates updated");
 }
 
 /* ===== SCANNER ===== */
@@ -487,7 +702,7 @@ function showInvoice(id){
       <div><strong>Invoice:</strong> ${esc(s.invoice)}<br><strong>Date:</strong> ${new Date(s.date).toLocaleString()}</div>
       <div><strong>Customer:</strong> ${esc(s.customerName)}<br><strong>Phone:</strong> ${esc(s.customerPhone||"—")}</div></div>
     <table style="width:100%;border-collapse:collapse"><thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Tax</th><th>Total</th></tr></thead>
-    <tbody>${s.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${money(i.price)}</td><td>${i.qty}</td><td>${money(i.taxAmount)}</td><td>${money(i.lineTotal+i.taxAmount)}</td></tr>`).join("")}</tbody></table>
+    <tbody>${s.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${money(i.price)}${i.unit==="kg"?"/kg":""}</td><td>${fmtQty(i.qty,i.unit)}</td><td>${money(i.taxAmount)}</td><td>${money(i.lineTotal+i.taxAmount)}</td></tr>`).join("")}</tbody></table>
     <div style="width:260px;margin:20px 0 0 auto">
       <div style="display:flex;justify-content:space-between;padding:7px"><span>Subtotal</span><strong>${money(s.subtotal)}</strong></div>
       <div style="display:flex;justify-content:space-between;padding:7px"><span>Tax</span><strong>${money(s.tax)}</strong></div>
@@ -499,17 +714,19 @@ function showInvoice(id){
 
 /* ===== DASHBOARD ===== */
 function renderDashboard(){
+  const stale=products.filter(p=>p.unit==="kg"&&p.rateDate!==today()).length;
+  $("rateNudge").innerHTML=stale?`<div class="card item" style="margin-bottom:14px;border-color:#e8c88a"><div><div class="name">Today's rates not updated</div><small>${stale} weighed product${stale>1?"s":""}</small></div><button class="btn small" onclick="openRates()">Update</button></div>`:"";
   $("statProducts").textContent=products.length;
   $("statUnits").textContent=products.reduce((a,p)=>a+Number(p.qty||0),0);
   $("statLow").textContent=products.filter(p=>p.qty<=5).length;
   $("statSales").textContent=money(sales.reduce((a,s)=>a+Number(s.total||0),0));
   $("recentSales").innerHTML=sales.slice(0,5).map(s=>`<div class="item"><div><div class="name">${esc(s.customerName)}</div><small>${esc(s.invoice)} · ${new Date(s.date).toLocaleDateString()}</small></div><strong>${money(s.total)}</strong></div>`).join("")||`<div class="empty">No sales yet.</div>`;
 }
-function renderAll(){renderDashboard();renderInventory();renderHistory();renderBilling()}
+function renderAll(){renderDashboard();renderInventory();renderSuppliers();renderHistory();renderBilling()}
 
 /* ===== BACKUP ===== */
 function exportBackup(){
-  const b=new Blob([JSON.stringify({app:"StockDesk",version:1,exportedAt:new Date().toISOString(),products,sales},null,2)],{type:"application/json"});
+  const b=new Blob([JSON.stringify({app:"StockDesk",version:1,exportedAt:new Date().toISOString(),products,sales,suppliers},null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="stockdesk-backup.json";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("Backup exported.");
 }
@@ -520,7 +737,7 @@ function importBackup(e){
     try{
       const d=JSON.parse(r.result);if(!Array.isArray(d.products))throw 0;
       if(!confirm("Replace current inventory and sales with this backup?"))return;
-      products=d.products;sales=Array.isArray(d.sales)?d.sales:[];
+      products=d.products;sales=Array.isArray(d.sales)?d.sales:[];suppliers=Array.isArray(d.suppliers)?d.suppliers:[];saveSuppliers();
       saveProducts();saveSales();renderAll();toast("Backup imported.");
     }catch{toast("Invalid backup file.")}
     e.target.value="";
